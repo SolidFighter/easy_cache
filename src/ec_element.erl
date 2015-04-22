@@ -12,7 +12,7 @@
 -behaviour(gen_server).
 
 %% API
--export([start_link/0]).
+-export([start_link/2, create/2, create/1, read/1, update/2, delete/1]).
 
 %% gen_server callbacks
 -export([init/1,
@@ -23,8 +23,9 @@
   code_change/3]).
 
 -define(SERVER, ?MODULE).
+-define(DEFAULT_LEASE_TIME, (2 * 24 * 60 * 60)).
 
--record(state, {}).
+-record(state, {value, lease_time, start_time}).
 
 %%%===================================================================
 %%% API
@@ -36,10 +37,73 @@
 %%
 %% @end
 %%--------------------------------------------------------------------
--spec(start_link() ->
-  {ok, Pid :: pid()} | ignore | {error, Reason :: term()}).
-start_link() ->
-  gen_server:start_link({local, ?SERVER}, ?MODULE, [], []).
+-spec start_link(Value, LeaseTime) -> Pid when
+  Value :: any(),
+  LeaseTime :: integer(),
+  Pid :: pid().
+start_link(Value, LeaseTime) ->
+  gen_server:start_link(?MODULE, [Value, LeaseTime], []).
+
+
+%%--------------------------------------------------------------------
+%% @doc
+%% Create a child to store value, it will exit after LeaseTime
+%%
+%% @end
+%%--------------------------------------------------------------------
+-spec create(Value, LeaseTime) -> Pid when
+  Value :: any(),
+  LeaseTime :: integer(),
+  Pid :: pid().
+create(Value, LeaseTime) ->
+  ec_sup:start_child(Value, LeaseTime).
+
+%%--------------------------------------------------------------------
+%% @doc
+%% Create a child to store value, it will exit after DEFAULT_LEASE_TIME
+%%
+%% @end
+%%--------------------------------------------------------------------
+-spec create(Value) -> Pid when
+  Value :: any(),
+  Pid :: pid().
+create(Value) ->
+  ec_sup:start_child(Value, ?DEFAULT_LEASE_TIME).
+
+%%--------------------------------------------------------------------
+%% @doc
+%% Read cache to get value
+%%
+%% @end
+%%--------------------------------------------------------------------
+-spec read(Pid) -> Value when
+  Pid :: pid(),
+  Value :: any().
+read(Pid) ->
+  gen_server:call(Pid, read).
+
+%%--------------------------------------------------------------------
+%% @doc
+%% Update value
+%%
+%% @end
+%%--------------------------------------------------------------------
+-spec update(Pid, Value) -> ok when
+  Pid :: pid(),
+  Value :: any().
+update(Pid, Value) ->
+  gen_server:cast(Pid, {update, Value}).
+
+%%--------------------------------------------------------------------
+%% @doc
+%% Delete value
+%%
+%% @end
+%%--------------------------------------------------------------------
+-spec delete(Pid) -> ok when
+  Pid :: pid().
+delete(Pid) ->
+  gen_server:cast(Pid, delete).
 
 %%%===================================================================
 %%% gen_server callbacks
@@ -56,11 +120,26 @@ start_link() ->
 %%                     {stop, Reason}
 %% @end
 %%--------------------------------------------------------------------
--spec(init(Args :: term()) ->
-  {ok, State :: #state{}} | {ok, State :: #state{}, timeout() | hibernate} |
-  {stop, Reason :: term()} | ignore).
-init([]) ->
-  {ok, #state{}}.
+-spec init(list()) -> tuple().
+init([Value, LeaseTime]) ->
+  Now = calendar:local_time(),
+  StartTime = calendar:datetime_to_gregorian_seconds(Now),
+  {ok,
+    #state{value = Value, lease_time = LeaseTime, start_time = StartTime},
+  time_left(StartTime, LeaseTime)}.
+
+time_left(_StartTime, infinity) ->
+  infinity;
+time_left(StartTime, LeaseTime) ->
+  Now = calendar:local_time(),
+  CurrentTime = calendar:datetime_to_gregorian_seconds(Now),
+  TimeElapsed = CurrentTime - StartTime,
+  case LeaseTime - TimeElapsed of
+    Time when Time =< 0 ->
+      0;
+    Time ->
+      Time * 1000
+  end.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -77,8 +156,10 @@ init([]) ->
   {noreply, NewState :: #state{}, timeout() | hibernate} |
   {stop, Reason :: term(), Reply :: term(), NewState :: #state{}} |
   {stop, Reason :: term(), NewState :: #state{}}).
-handle_call(_Request, _From, State) ->
-  {reply, ok, State}.
+handle_call(read, _From, State) ->
+  #state{value = Value, lease_time = LeaseTime, start_time = StartTime} = State,
+  TimeLeft = time_left(StartTime, LeaseTime),
+  {reply, {ok, Value}, State, TimeLeft}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -91,8 +172,12 @@ handle_call(_Request, _From, State) ->
   {noreply, NewState :: #state{}} |
   {noreply, NewState :: #state{}, timeout() | hibernate} |
   {stop, Reason :: term(), NewState :: #state{}}).
-handle_cast(_Request, State) ->
-  {noreply, State}.
+handle_cast({update, Value}, State) ->
+  #state{lease_time = LeaseTime, start_time = StartTime} = State,
+  TimeLeft = time_left(StartTime, LeaseTime),
+  {noreply, State#state{value = Value}, TimeLeft};
+handle_cast(delete, State) ->
+  {stop, normal, State}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -108,8 +193,8 @@ handle_cast(_Request, State) ->
   {noreply, NewState :: #state{}} |
   {noreply, NewState :: #state{}, timeout() | hibernate} |
   {stop, Reason :: term(), NewState :: #state{}}).
-handle_info(_Info, State) ->
-  {noreply, State}.
+handle_info(timeout, State) ->
+  {stop, normal, State}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -125,6 +210,7 @@ handle_info(_Info, State) ->
 -spec(terminate(Reason :: (normal | shutdown | {shutdown, term()} | term()),
     State :: #state{}) -> term()).
 terminate(_Reason, _State) ->
+  ec_route:delete(self()),
   ok.
 
 %%--------------------------------------------------------------------
