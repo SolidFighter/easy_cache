@@ -36,6 +36,7 @@
   {ok, pid(), State :: term()} |
   {error, Reason :: term()}).
 start(_StartType, _StartArgs) ->
+  ec_route:init(),
   case ec_sup:start_link() of
     {ok, Pid} ->
       {ok, Pid};
