@@ -1,0 +1,4 @@
+%% encoding: UTF-8
+{application,easy_cache}.
+{packages,[]}.
+{modules,[easy_cache,ec_app,ec_element,ec_route,ec_sup]}.
