@@ -56,7 +56,7 @@ start_link(Value, LeaseTime) ->
   LeaseTime :: integer(),
   Pid :: pid().
 create(Value, LeaseTime) ->
-  ec_sup:start_child(Value, LeaseTime).
+  ec_element_sup:start_child(Value, LeaseTime).
 
 %%--------------------------------------------------------------------
 %% @doc
@@ -68,7 +68,7 @@ create(Value, LeaseTime) ->
   Value :: any(),
   Pid :: pid().
 create(Value) ->
-  ec_sup:start_child(Value, ?DEFAULT_LEASE_TIME).
+  create(Value, ?DEFAULT_LEASE_TIME).
 
 %%--------------------------------------------------------------------
 %% @doc

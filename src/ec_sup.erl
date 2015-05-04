@@ -4,15 +4,15 @@
 %%% @doc
 %%%
 %%% @end
-%%% Created : 21. Apr 2015 8:38 PM
+%%% Created : 04. May 2015 8:40 PM
 %%%-------------------------------------------------------------------
--module(ec_element_sup).
+-module(ec_sup).
 -author("myang").
 
 -behaviour(supervisor).
 
 %% API
--export([start_link/0, start_child/2]).
+-export([start_link/0]).
 
 %% Supervisor callbacks
 -export([init/1]).
@@ -33,19 +33,6 @@
   {ok, Pid :: pid()} | ignore | {error, Reason :: term()}).
 start_link() ->
   supervisor:start_link({local, ?SERVER}, ?MODULE, []).
-
-%%--------------------------------------------------------------------
-%% @doc
-%% Starts the ec_element to store value, it will exit after LeaseTime
-%%
-%% @end
-%%--------------------------------------------------------------------
--spec start_child(Value, LeaseTime) -> Pid when
-  Value :: any(),
-  LeaseTime :: integer(),
-  Pid :: pid().
-start_child(Value, LeaseTime) ->
-  supervisor:start_child(?SERVER, [Value, LeaseTime]).
 
 %%%===================================================================
 %%% Supervisor callbacks
@@ -69,20 +56,20 @@ start_child(Value, LeaseTime) ->
   ignore |
   {error, Reason :: term()}).
 init([]) ->
-  RestartStrategy = simple_one_for_one,
+  RestartStrategy = one_for_one,
   MaxRestarts = 1000,
   MaxSecondsBetweenRestarts = 3600,
 
   SupFlags = {RestartStrategy, MaxRestarts, MaxSecondsBetweenRestarts},
 
-  Restart = temporary,
-  Shutdown = brutal_kill,
-  Type = worker,
+  Restart = permanent,
+  Shutdown = 2000,
 
-  AChild = {ec_element, {ec_element, start_link, []},
-    Restart, Shutdown, Type, [ec_element]},
-
-  {ok, {SupFlags, [AChild]}}.
+  ElementSup = {ec_element_sup, {ec_element_sup, start_link, []},
+    Restart, Shutdown, supervisor, [ec_element_sup]},
+  EventManager = {ec_event, {ec_event, start_link, []},
+    Restart, Shutdown, worker, [ec_event]},
+  {ok, {SupFlags, [ElementSup, EventManager]}}.
 
 %%%===================================================================
 %%% Internal functions

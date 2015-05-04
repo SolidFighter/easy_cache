@@ -39,6 +39,7 @@ start(_StartType, _StartArgs) ->
   ec_route:init(),
   case ec_sup:start_link() of
     {ok, Pid} ->
+      ec_event_logger:add_handler(),
       {ok, Pid};
     Error ->
       Error

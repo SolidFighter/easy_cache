@@ -28,8 +28,10 @@
 create(Key, Value) ->
   case ec_route:read(Key) of
     {ok, Pid} ->
+      ec_event:update(Key, Value),
       ec_element:update(Pid, Value);
     {error, _Reason} ->
+      ec_event:create(Key, Value),
       {ok, Pid} = ec_element:create(Value),
       ec_route:create(Key, Pid)
     end.
@@ -43,6 +45,7 @@ create(Key, Value) ->
 -spec read(Key) -> any() when
   Key :: any().
 read(Key) ->
+  ec_event:read(Key),
   try
     {ok, Pid} = ec_route:read(Key),
     {ok, Value} = ec_element:read(Pid),
@@ -61,6 +64,7 @@ read(Key) ->
 -spec delete(Key) -> any() when
   Key :: any().
 delete(Key) ->
+  ec_event:delete(Key),
   case ec_route:read(Key) of
     {ok, Pid} ->
       ec_element:delete(Pid);
