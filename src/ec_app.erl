@@ -36,6 +36,7 @@
   {ok, pid(), State :: term()} |
   {error, Reason :: term()}).
 start(_StartType, _StartArgs) ->
+  ok = ensure_contact(),
   ec_route:init(),
   case ec_sup:start_link() of
     {ok, Pid} ->
@@ -61,3 +62,76 @@ stop(_State) ->
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
+
+%%--------------------------------------------------------------------
+%% @private
+%% @doc
+%% Query contact nodes
+%%
+%% @end
+%%--------------------------------------------------------------------
+-spec ensure_contact() -> any().
+ensure_contact() ->
+  DefaultNodes = ['contact1@localhost', 'contact2@localhost'],
+  case get_env(easy_cache, contact_nodes, DefaultNodes) of
+    [] ->
+      {error, no_contact_nodes};
+    ContactNodes ->
+      ensure_contact(ContactNodes)
+  end.
+
+%%--------------------------------------------------------------------
+%% @private
+%% @doc
+%% Ping contact nodes
+%%
+%% @end
+%%--------------------------------------------------------------------
+-spec ensure_contact(ContactNodes) -> any() when
+  ContactNodes :: list().
+ensure_contact(ContactNodes) ->
+  Answering = [N || N <- ContactNodes, net_adm:ping(N) =:= pong],
+  case Answering of
+    [] ->
+      {error, no_contact_nodes_reachable};
+    _ ->
+      DefaultTime = 6000,
+      WaitTime = get_env(easy_cache, wait_time, DefaultTime),
+      wait_for_nodes(length(Answering), WaitTime)
+  end.
+
+%%--------------------------------------------------------------------
+%% @private
+%% @doc
+%% Wait for nodes.
+%%
+%% @end
+%%--------------------------------------------------------------------
+wait_for_nodes(MinNodes, WaitTime) ->
+  Slices = 10,
+  SliceTime = round(WaitTime/Slices),
+  wait_for_nodes(MinNodes, SliceTime, Slices).
+
+wait_for_nodes(_MinNodes, _SliceTime, 0) ->
+  ok;
+wait_for_nodes(MinNodes, SliceTime, Iterations) ->
+  case length(nodes()) > MinNodes of
+    true ->
+      ok;
+    false ->
+      timer:sleep(SliceTime),
+      wait_for_nodes(MinNodes, SliceTime, Iterations - 1)
+  end.
+
+%%--------------------------------------------------------------------
+%% @private
+%% @doc
+%% Get config information.
+%%
+%% @end
+%%--------------------------------------------------------------------
+get_env(AppName, Key, Default) ->
+  case application:get_env(AppName, Key) of
+    undefined -> Default;
+    {ok, Value} -> Value
+  end.
