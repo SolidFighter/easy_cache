@@ -12,7 +12,10 @@
   {registered, []},
   {applications, [
     kernel,
-    stdlib
+    sasl,
+    stdlib,
+    mnesia,
+    resource_discovery
   ]},
   {mod, {ec_app, []}},
   {env, []}

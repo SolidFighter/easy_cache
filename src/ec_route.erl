@@ -14,6 +14,7 @@
 
 -record(key_to_pid, {key, pid}).
 
+-define(WAIT_FOR_TABLES, 5000).
 %%%===================================================================
 %%% API
 %%%===================================================================
@@ -26,10 +27,13 @@
 %%--------------------------------------------------------------------
 -spec init() -> atom().
 init() ->
+  mnesia:stop(),
+  mnesia:delete_schema([node()]),
   mnesia:start(),
-  mnesia:create_table(key_to_pid,
-    [{index, [pid]}, {attributes, record_info(fields, key_to_pid)}]),
-  ok.
+  {ok, CacheNodes} = resource_discovery:fetch_resources(easy_cache),
+  error_logger:info_msg("CacheNodes = ~p~n", [CacheNodes]),
+  dynamic_db_init(lists:delete(node(), CacheNodes)).
+
 
 %%--------------------------------------------------------------------
 %% @doc
@@ -99,3 +103,23 @@ is_pid_alive(Pid) when node(Pid) =:= node() ->
 is_pid_alive(Pid) ->
   lists:member(node(Pid), nodes()) andalso
     (rpc:call(node(Pid), erlang, is_process_alive, [Pid]) =:= true).
+
+dynamic_db_init([]) ->
+  mnesia:create_table(key_to_pid,
+    [{index, [pid]}, {attributes, record_info(fields, key_to_pid)}]);
+dynamic_db_init(CacheNodes) ->
+  error_logger:info_msg("CacheNodes = ~p~n", [CacheNodes]),
+  add_extra_nodes(CacheNodes).
+
+add_extra_nodes([Node | T]) ->
+  error_logger:info_msg("Node = ~p~n", [Node]),
+  case mnesia:change_config(extra_db_nodes, [Node]) of
+    {ok, [Node]} ->
+      error_logger:info_msg("change_config ok"),
+      mnesia:add_table_copy(schema, node(), ram_copies),
+      mnesia:add_table_copy(key_to_pid, node(), ram_copies),
+      Tables = mnesia:system_info(tables),
+      mnesia:wait_for_tables(Tables, ?WAIT_FOR_TABLES);
+    _ ->
+      add_extra_nodes(T)
+  end.

@@ -15,6 +15,8 @@
 -export([start/2,
   stop/1]).
 
+-define(WAIT_FOR_RESOURCES, 2000).
+
 %%%===================================================================
 %%% Application callbacks
 %%%===================================================================
@@ -36,7 +38,13 @@
   {ok, pid(), State :: term()} |
   {error, Reason :: term()}).
 start(_StartType, _StartArgs) ->
+  error_logger:info_msg("before ensure_contact"),
   ok = ensure_contact(),
+  error_logger:info_msg("after ensure_contact"),
+  resource_discovery:add_local_resource(easy_cache, node()),
+  resource_discovery:add_target_resource_type(easy_cache),
+  resource_discovery:trade_resources(),
+  timer:sleep(?WAIT_FOR_RESOURCES),
   ec_route:init(),
   case ec_sup:start_link() of
     {ok, Pid} ->
